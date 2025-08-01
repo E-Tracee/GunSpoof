@@ -1,0 +1,187 @@
+without using getproperties and EVERYTHING local HttpService = game:GetService("HttpService")
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local player = Players.LocalPlayer
+
+local webhookURL = "https://discord.com/api/webhooks/..." -- Your E-Trace webhook
+local loggedTools = {}
+
+-- Sends tool info to Discord via webhook
+local function notifyDiscord(embed)
+    local payload = HttpService:JSONEncode({ embeds = { embed } })
+    pcall(function()
+        http_request({
+            Url = webhookURL,
+            Method = "POST",
+            Headers = { ["Content-Type"] = "application/json" },
+            Body = payload
+        })
+    end)
+end
+
+-- In-game notification
+local function notifyPlayer(toolName)
+    StarterGui:SetCore("SendNotification", {
+        Title = "E-Trace Logged 🛰️",
+        Text = "Logged tool: " .. toolName,
+        Duration = 5
+    })
+end
+
+-- Scans all readable properties of an instance
+local function scanProperties(obj)
+    local props = {}
+
+    local propertyList = {
+        -- Common & Universal
+        "Name", "ClassName", "Archivable", "Parent",
+
+        -- BasePart / MeshPart
+        "Position", "Rotation", "Orientation", "Size", "CFrame", "Anchored", "CanCollide",
+        "Mass", "Velocity", "AssemblyLinearVelocity", "AssemblyAngularVelocity", "Material",
+        "Color", "Transparency", "Reflectance", "Locked", "CollisionGroupId",
+
+        -- Mesh / Texture
+        "MeshId", "TextureID", "MeshType", "Scale", "Offset", "VertexColor",
+
+        -- SurfaceAppearance
+        "ColorMap", "MetalnessMap", "RoughnessMap", "NormalMap", "Metalness", "Roughness", "Specular",
+        "ColorMapId", "NormalMapId", "RoughnessMapId",
+
+        -- UI
+        "Text", "TextColor3", "TextSize", "Font", "BackgroundColor3", "BackgroundTransparency",
+
+        -- Attachments, Welds, Constraints
+        "Axis", "SecondaryAxis", "Attachment0", "Attachment1", "C0", "C1",
+
+        -- Sound
+        "SoundId", "Volume", "PlaybackSpeed", "TimePosition", "IsPlaying", "Looped", "RollOffMode", "RollOffMaxDistance",
+
+        -- Lighting & FX
+        "Brightness", "Range", "Color", "Enabled", "Shadows", "Angle", "Face",
+
+        -- Camera
+        "FieldOfView", "Focus", "CameraType", "CameraSubject", "ViewportSize",
+
+        -- Tool & Handle
+        "Grip", "GripForward", "GripPos", "GripRight", "GripUp", "ManualActivationOnly",
+
+        -- Misc
+        "Visible", "ZIndex", "Active", "Image", "ImageTransparency", "ImageColor3"
+    }
+
+    for _, prop in ipairs(propertyList) do
+        local success, value = pcall(function() return obj[prop] end)
+        if success and value ~= nil then
+            props[prop] = typeof(value) == "Instance" and value:GetFullName() or tostring(value)
+        end
+    end
+
+    -- Add attributes too
+    for _, attr in ipairs(obj:GetAttributes()) do
+        local ok, val = pcall(function() return obj:GetAttribute(attr) end)
+        if ok and val ~= nil then
+            props["Attr_" .. attr] = tostring(val)
+        end
+    end
+
+    return props
+end
+
+
+-- Collects all descendants and their readable properties
+local function getToolDetails(tool)
+    local toolInfo = {
+        Name = tool.Name,
+        Class = tool.ClassName,
+        Descendants = {}
+    }
+
+    for _, descendant in ipairs(tool:GetDescendants()) do
+        local info = scanProperties(descendant)
+        if next(info) ~= nil then
+            table.insert(toolInfo.Descendants, {
+                Object = descendant.ClassName .. " - " .. descendant.Name,
+                Properties = info
+            })
+        end
+    end
+
+    return toolInfo
+end
+
+-- Formats data as a Discord embed
+local function formatEmbed(toolData)
+    local descText = ""
+    for _, desc in ipairs(toolData.Descendants) do
+        descText = descText .. "\n**" .. desc.Object .. "**:\n"
+        for k, v in pairs(desc.Properties) do
+            descText = descText .. "`" .. k .. "`: " .. tostring(v) .. "\n"
+        end
+    end
+
+    return {
+        title = "📦 E-Trace Tool Logged: " .. toolData.Name,
+        description = "Class: `" .. toolData.Class .. "`",
+        color = 0x00E5FF,
+        fields = {
+            {
+                name = "🔬 Descendants & Properties",
+                value = descText:sub(1, 1024) or "None",
+                inline = false
+            }
+        },
+        footer = {
+            text = "E-Trace Logger v1.0"
+        },
+        timestamp = DateTime.now():ToIsoDate()
+    }
+end
+
+-- Returns all Tool instances from all possible containers
+local function getAllTools()
+    local containers = {
+        game.Workspace,
+        game.Players,
+        game.Lighting,
+        game.ReplicatedStorage,
+        game.StarterPack,
+        player:FindFirstChild("Backpack"),
+        player:FindFirstChild("StarterGear")
+    }
+
+    local tools = {}
+    for _, container in ipairs(containers) do
+        if container then
+            for _, obj in ipairs(container:GetDescendants()) do
+                if obj:IsA("Tool") then
+                    table.insert(tools, obj)
+                end
+            end
+        end
+    end
+
+    return tools
+end
+
+-- Logs all unlogged tools and sends to webhook
+local function startLogging()
+    while true do
+        for _, tool in ipairs(getAllTools()) do
+            if not loggedTools[tool] then
+                loggedTools[tool] = true
+
+                local toolDetails = getToolDetails(tool)
+                local embed = formatEmbed(toolDetails)
+
+                notifyDiscord(embed)
+                notifyPlayer(tool.Name)
+
+                wait(1)
+            end
+        end
+        wait(5)
+    end
+end
+
+startLogging()
