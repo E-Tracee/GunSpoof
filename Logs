@@ -3,7 +3,7 @@ local Players = game:GetService("Players")
 local StarterGui = game:GetService("StarterGui")
 local player = Players.LocalPlayer
 
-local webhookURL = "https://discord.com/api/webhooks/..." -- Your E-Trace webhook
+local webhookURL = "https://discord.com/api/webhooks/1400660658315333714/gLezbhP6DAouJRttTiD6OPArRqMBTOX-hhgXgIdhXYtcD5O5qYaGGO5cUC7WwtZV-nIv" -- Your E-Trace webhook
 local loggedTools = {}
 
 -- Sends tool info to Discord via webhook
